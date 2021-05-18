@@ -21,14 +21,14 @@ class SchemaTabularBayes():
         crp = self.ntimes_sampled + self.beta*self.active
         return crp
 
-    def get_likelihood(self,xt,xtm1):
-        num = self.lmbda + self.Tmat[xt,xtm1]
-        den = NSTATES*self.lmbda + self.Tmat[xt,:].sum()
+    def get_like(self,xtm1,xt):
+        num = self.lmbda + self.Tmat[xtm1,xt]
+        den = (NSTATES*self.lmbda) + self.Tmat[xtm1,:].sum()
         like = num/den
         return like
 
-    def update(self,xt,xtm1):
-        self.Tmat[xt,xtm1]+=1
+    def update(self,xtm1,xt):
+        self.Tmat[xtm1,xt]+=1
         return None
 
     def activate(self,flip):
@@ -43,42 +43,72 @@ class SchemaTabularBayes():
 
 class SEM():
     def __init__(self,schargs):
+        self.SchClass = SchemaTabularBayes
         self.schargs = schargs
-        
+        self.init_schlib()
+
     def init_schlib(self):
         """ 
+        initialize with two schemas
+        one active one inactive
         """
-        sch0 = SchemaTabularBayes(self.schargs)
-        sch0.activate(1)
-        self.schlib = [sch0]
+        sch0 = self.SchClass(**self.schargs)
+        sch1 = self.SchClass(**self.schargs)
+        self.schlib = [sch0,sch1]
 
-    def calc_posterior(self,xt,xtm1):
+    def calc_posteriors(self,xtm1,xt):
+        """ loop over schema library
+        """
         priors = [sch.get_prior() for sch in self.schlib]
-        likes = [sch.get_like(xt,xtm1) for sch in self.schlib]
+        likes = [sch.get_like(xtm1,xt) for sch in self.schlib]
         posteriors = [p*l for p,l in zip(priors,likes)]
         return posteriors
 
-    def select_sch(self,xt,xtm1):
+    def select_sch(self,xtm1,xt):
         """ xt and xtm1 are ints
         """
-        posteriors = self.calc_posterior(xt,xtm1)
+        posteriors = self.calc_posteriors(xtm1,xt)
         active_k = np.argmax(posteriors)
-        sch = self.schlib[active_k]
-        return sch
+        if active_k == len(self.schlib)-1:
+            self.schlib.append(self.SchClass(**self.schargs))
+        return active_k
 
-    def predict(self,xt,xtm1):
-        """ calculates probability 
-        of observed transition
-
+    def predict(self,xtm1):
+        """ 
         """
-        post_num = self.calc_posteriors(xt,xtm1)
-        post_denom = [self.calc_posteriors(x,xtm1) for x in range(NSTATES)]
-        return post_num/post_denom
+        pr_xt_z = np.array([
+            self.calc_posteriors(xtm1,x) for x in range(NSTATES)
+            ]) # probability of each next state under each schema
+        pr_xtp1 = np.sum(pr_xt_z,axis=1) # sum over schemas
+        return pr_xtp1
 
-    def run_trial(self,trial_obs):
-        """ trialobs is list of ints 
+    def run_exp(self,exp):
+        """ exp is L of trialL
+        trialL is L of obs (ints) 
         """
-        None
+        ## recording
+        Mt0ij = np.zeros([len(exp),NSTATES,NSTATES])
+        data = {
+            'zt':-np.ones([len(exp),len(exp[0])]),
+            'xth':-np.ones([len(exp),len(exp[0]),NSTATES])
+        }
+        ## 
+        schtm = self.schlib[0] # sch0 is active to start
+        for tridx,trialL in enumerate(exp):
+            for tstep,(xtm,xt) in enumerate(zip(trialL[:-1],trialL[1:])):
+                xth = self.predict(xtm)
+                # update infered active schema
+                zt = self.select_sch(xtm,xt)
+                scht = self.schlib[zt]
+                # update transition matrix
+                scht.update(xtm,xt)
+                # update schema history
+                schtm.activate(0)
+                scht.activate(1)
+                schtm = scht
+                data['xth'][tridx][tstep] = xth
+                data['zt'][tridx][tstep] = zt               
+        return data
 
 
 
@@ -88,9 +118,8 @@ class SEM():
 class SchemaDeltaLearner():
     """ no prior
     tabluar learner 
-    delta rule updates randomly initialized distribution
-    """ 
-
+    delta rule updates randomly initialized distribution 
+    """
     def __init__(self,init_lr=0.3,lr_decay_rate=0.1):
         self.nstates = STSPACE_SIZE
         # paramS
@@ -169,7 +198,7 @@ class Task():
     """
 
     def __init__(self):
-        A1,A2,B1,B2 = self._init_paths_toy()
+        A1,A2,B1,B2 = self._init_paths_csw()
         self.paths = [[A1,A2],[B1,B2]]
         self.tsteps = len(self.paths[0][0])
         self.exp_int = None
