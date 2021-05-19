@@ -90,11 +90,17 @@ class SEM():
         Mt0ij = np.zeros([len(exp),NSTATES,NSTATES])
         data = {
             'zt':-np.ones([len(exp),len(exp[0])]),
-            'xth':-np.ones([len(exp),len(exp[0]),NSTATES])
+            'xth':-np.ones([len(exp),len(exp[0]),NSTATES]),
+            'priors':[],
+            'likesL2':[],
+            'postL2':[],
         }
         ## 
         schtm = self.schlib[0] # sch0 is active to start
         for tridx,trialL in enumerate(exp):
+            data['priors'].append([sch.get_prior() for sch in self.schlib])
+            data['likesL2'].append([sch.get_like(trialL[2],trialL[3]) for sch in self.schlib])
+            data['postL2'].append([self.calc_posteriors(trialL[2],trialL[3])])
             for tstep,(xtm,xt) in enumerate(zip(trialL[:-1],trialL[1:])):
                 xth = self.predict(xtm)
                 # update infered active schema
@@ -107,7 +113,7 @@ class SEM():
                 scht.activate(1)
                 schtm = scht
                 data['xth'][tridx][tstep] = xth
-                data['zt'][tridx][tstep] = zt               
+                data['zt'][tridx][tstep] = zt       
         return data
 
 
