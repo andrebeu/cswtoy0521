@@ -1,6 +1,6 @@
 # cswtoy0521 (05/11/21)
 - Schema is implemented as transition matrix
-- fit to Blocked and Interleaved curricula
+- Fit to Blocked and Interleaved curricula
 - Schema inference 
   - hierarchical dirichlet-CRP assumed generative process
   - MAP point estimate on schema history 
